@@ -12,9 +12,12 @@
 
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { AuthError, requireUser } from "../_shared/auth.ts";
+import { enforceRateLimit } from "../_shared/ratelimit.ts";
 
 const MAX_QUESTION_CHARS = 1000;
 const MAX_TALKS = 5;
+const RATE_LIMIT = 30; // answers per user per hour (GPT-4o is the expensive call)
+const RATE_WINDOW_SECONDS = 3600;
 const MAX_CHARS_PER_TALK = 20000; // ~5k tokens; keeps the prompt (and cost) bounded
 
 // If even the best retrieved talk scores below this, retrieval found nothing
@@ -47,12 +50,17 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   // 1. Who is calling? Reject before anything that costs money.
+  let user;
   try {
-    await requireUser(req);
+    user = await requireUser(req);
   } catch (e) {
     if (e instanceof AuthError) return json({ error: e.message }, 401);
     return json({ error: "Auth check failed" }, 500);
   }
+
+  // 1b. Is this user still within their hourly quota?
+  const limited = await enforceRateLimit(user.id, "generate-answer", RATE_LIMIT, RATE_WINDOW_SECONDS);
+  if (limited) return limited;
 
   // 2. Validate input.
   let body: { question?: unknown; context_talks?: unknown };

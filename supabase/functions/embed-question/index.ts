@@ -14,8 +14,11 @@
 
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { AuthError, requireUser } from "../_shared/auth.ts";
+import { enforceRateLimit } from "../_shared/ratelimit.ts";
 
 const MAX_QUESTION_CHARS = 1000; // cap input so nobody can burn tokens on huge text
+const RATE_LIMIT = 120;          // embeddings per user per hour (cheap: ~$0.00002 each)
+const RATE_WINDOW_SECONDS = 3600;
 
 Deno.serve(async (req: Request) => {
   // Browsers send an OPTIONS "preflight" request before a cross-origin POST.
@@ -26,12 +29,17 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   // 1. Who is calling? Reject before doing anything that costs money.
+  let user;
   try {
-    await requireUser(req);
+    user = await requireUser(req);
   } catch (e) {
     if (e instanceof AuthError) return json({ error: e.message }, 401);
     return json({ error: "Auth check failed" }, 500);
   }
+
+  // 1b. Is this user still within their hourly quota?
+  const limited = await enforceRateLimit(user.id, "embed-question", RATE_LIMIT, RATE_WINDOW_SECONDS);
+  if (limited) return limited;
 
   // 2. Validate the input.
   let question: unknown;
