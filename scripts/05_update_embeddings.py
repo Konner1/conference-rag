@@ -1,7 +1,7 @@
 """
 Step 5: Import Embeddings to Database
 =========================================
-Reads scripts/output/sentences_with_embeddings.json and imports
+Reads scripts/output/paragraphs_with_embeddings.json and imports
 all records (text + embeddings) to Supabase, replacing any
 existing data.
 
@@ -11,7 +11,7 @@ Usage:
     python scripts/05_update_embeddings.py
 
 Input:
-    scripts/output/sentences_with_embeddings.json  — from Step 4
+    scripts/output/paragraphs_with_embeddings.json  — from Step 4
 
 Prerequisites:
     - config.public.json with Supabase URL and anon key
@@ -29,7 +29,7 @@ from supabase import create_client
 from tqdm import tqdm
 
 
-INPUT_FILE = os.path.join('scripts', 'output', 'sentences_with_embeddings.json')
+INPUT_FILE = os.path.join('scripts', 'output', 'paragraphs_with_embeddings.json')
 BATCH_SIZE = 100
 
 
@@ -70,11 +70,11 @@ def main():
     print("=" * 60)
 
     try:
-        result = client.table('sentence_embeddings').select('id', count='exact').limit(1).execute()
+        result = client.table('paragraph_embeddings').select('id', count='exact').limit(1).execute()
         existing_count = result.count or 0
         if existing_count > 0:
             print(f"   Truncating {existing_count:,} existing rows...")
-            client.table('sentence_embeddings').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            client.table('paragraph_embeddings').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
             print("   ✅ Table truncated.")
         else:
             print("   Table is empty — ready for import.")
@@ -91,7 +91,7 @@ def main():
     for i in tqdm(range(0, len(records), BATCH_SIZE), desc="Importing"):
         batch = records[i:i + BATCH_SIZE]
         try:
-            client.table('sentence_embeddings').insert(batch).execute()
+            client.table('paragraph_embeddings').insert(batch).execute()
             success += len(batch)
         except Exception as e:
             print(f"\nError at batch {i // BATCH_SIZE}: {e}")
@@ -104,10 +104,10 @@ def main():
         print(f"   Errors:  {errors:,}")
 
     # Verify
-    result = client.table('sentence_embeddings').select('id', count='exact').limit(1).execute()
+    result = client.table('paragraph_embeddings').select('id', count='exact').limit(1).execute()
     total = result.count or 0
 
-    embedded_result = client.table('sentence_embeddings') \
+    embedded_result = client.table('paragraph_embeddings') \
         .select('id', count='exact') \
         .not_('embedding', 'is', 'null') \
         .limit(1).execute()

@@ -320,7 +320,7 @@ async function checkSearchReadiness() {
     try {
         // --- Check 1: Any data at all? (keyword search just needs text) ---
         const { count: totalCount, error: totalError } = await supabaseClient
-            .from('sentence_embeddings')
+            .from('paragraph_embeddings')
             .select('*', { count: 'exact', head: true });
 
         const hasData = !totalError && totalCount > 0;
@@ -330,7 +330,7 @@ async function checkSearchReadiness() {
         let hasEmbeddings = false;
         if (hasData) {
             const { count, error } = await supabaseClient
-                .from('sentence_embeddings')
+                .from('paragraph_embeddings')
                 .select('*', { count: 'exact', head: true })
                 .not('embedding', 'is', null);
             hasEmbeddings = !error && count > 0;
@@ -415,9 +415,9 @@ async function keywordSearch() {
     clearResults('keyword');
 
     try {
-        // Search sentence_embeddings that contain the keyword (case-insensitive)
+        // Search paragraph_embeddings that contain the keyword (case-insensitive)
         const { data, error } = await supabaseClient
-            .from('sentence_embeddings')
+            .from('paragraph_embeddings')
             .select('text, talk_id, title, speaker, url')
             .ilike('text', `%${query}%`)
             .limit(20);
@@ -438,10 +438,10 @@ async function keywordSearch() {
                     title: row.title || 'Unknown Talk',
                     speaker: row.speaker || 'Unknown Speaker',
                     url: row.url || '',
-                    sentences: []
+                    paragraphs: []
                 };
             }
-            talks[talkId].sentences.push(highlightKeyword(row.text, query));
+            talks[talkId].paragraphs.push(highlightKeyword(row.text, query));
         }
 
         let html = '';
@@ -449,7 +449,7 @@ async function keywordSearch() {
             html += `<div class="result-card">
                 <div class="result-title"><a href="${escapeHtml(talk.url)}" target="_blank" class="result-title-link">${escapeHtml(talk.title)}</a></div>
                 <div class="result-speaker">by ${escapeHtml(talk.speaker)}</div>
-                <div class="result-sentences">${talk.sentences.slice(0, 3).join('<br>')}</div>
+                <div class="result-paragraphs">${talk.paragraphs.slice(0, 3).join('<br>')}</div>
             </div>`;
         }
         showResults('keyword', html);
@@ -482,8 +482,8 @@ async function semanticSearch() {
         // Step 1: Get embedding
         const embedding = await getEmbedding(query);
 
-        // Step 2: Search for similar sentences
-        const results = await searchSentences(embedding);
+        // Step 2: Search for similar paragraphs
+        const results = await searchParagraphs(embedding);
 
         if (!results || results.length === 0) {
             showResults('semantic', '<div class="no-results">No similar content found. Try a different query.</div>');
@@ -503,7 +503,7 @@ async function semanticSearch() {
                     </div>
                     ${badge}
                 </div>
-                <div class="result-sentences">${escapeHtml(result.text)}</div>
+                <div class="result-paragraphs">${escapeHtml(result.text)}</div>
             </div>`;
         }
         showResults('semantic', html);
@@ -530,8 +530,8 @@ async function askQuestion() {
         // Step 1: Get embedding
         const embedding = await getEmbedding(question);
 
-        // Step 2: Search for similar sentences
-        const results = await searchSentences(embedding);
+        // Step 2: Search for similar paragraphs
+        const results = await searchParagraphs(embedding);
 
         // Step 3: Group by talk (with similarity scores and URLs)
         const topTalks = groupByTalk(results);
@@ -553,7 +553,7 @@ async function askQuestion() {
                 <div class="result-title">AI Answer</div>
                 ${overallBadge}
             </div>
-            <div class="result-sentences">${escapeHtml(answer)}</div>
+            <div class="result-paragraphs">${escapeHtml(answer)}</div>
         </div>`;
 
         // Show source talks with per-talk similarity badges and links
@@ -596,11 +596,11 @@ async function getEmbedding(text) {
     return data.embedding;
 }
 
-// Search sentences using vector similarity
-async function searchSentences(embedding) {
+// Search paragraphs using vector similarity
+async function searchParagraphs(embedding) {
     if (!supabaseClient) throw new Error('Supabase not configured');
 
-    const { data, error } = await supabaseClient.rpc('match_sentences', {
+    const { data, error } = await supabaseClient.rpc('match_paragraphs', {
         query_embedding: embedding,
         match_count: 20
     });
@@ -610,42 +610,42 @@ async function searchSentences(embedding) {
 }
 
 // Group search results by talk, computing average similarity per talk
-function groupByTalk(sentences) {
+function groupByTalk(paragraphs) {
     const talkMap = {};
 
-    for (const sent of sentences) {
+    for (const sent of paragraphs) {
         if (!talkMap[sent.talk_id]) {
             talkMap[sent.talk_id] = {
                 talk_id: sent.talk_id,
                 title: sent.title,
                 speaker: sent.speaker,
                 url: sent.url,
-                sentences: [],
+                paragraphs: [],
                 totalSimilarity: 0
             };
         }
-        talkMap[sent.talk_id].sentences.push(sent.text);
+        talkMap[sent.talk_id].paragraphs.push(sent.text);
         talkMap[sent.talk_id].totalSimilarity += sent.similarity;
     }
 
     return Object.values(talkMap)
-        .sort((a, b) => b.totalSimilarity / b.sentences.length - a.totalSimilarity / a.sentences.length)
+        .sort((a, b) => b.totalSimilarity / b.paragraphs.length - a.totalSimilarity / a.paragraphs.length)
         .slice(0, 3)
         .map(talk => ({
             talk_id: talk.talk_id,
             title: talk.title,
             speaker: talk.speaker,
             url: talk.url,
-            text: talk.sentences.join(' '),
+            text: talk.paragraphs.join('\n\n'),
             // TODO: Is average similarity the right metric? Alternatives worth researching:
             // - Max similarity (best single match per talk)
-            // - Average of top-3 sentences (reduces noise from weak matches)
-            // - Weighted by sentence count (rewards talks with more matches)
-            avgSimilarity: talk.totalSimilarity / talk.sentences.length
+            // - Average of top-3 paragraphs (reduces noise from weak matches)
+            // - Weighted by paragraph count (rewards talks with more matches)
+            avgSimilarity: talk.totalSimilarity / talk.paragraphs.length
         }));
 }
 
-// Fetch full talk text by querying all sentences for given talk_ids, ordered by sentence_num.
+// Fetch full talk text by querying all paragraphs for given talk_ids, ordered by paragraph_num.
 // Uses a single batched query via .in() for all talk_ids — no parallel calls needed.
 async function fetchFullTalkText(talks) {
     if (!supabaseClient || !talks.length) return talks;
@@ -653,18 +653,18 @@ async function fetchFullTalkText(talks) {
     const talkIds = talks.map(t => t.talk_id);
 
     const { data, error } = await supabaseClient
-        .from('sentence_embeddings')
-        .select('talk_id, sentence_num, text')
+        .from('paragraph_embeddings')
+        .select('talk_id, paragraph_num, text')
         .in('talk_id', talkIds)
         .order('talk_id')
-        .order('sentence_num');
+        .order('paragraph_num');
 
     if (error || !data) {
         console.warn('Failed to fetch full talk text, using snippets:', error?.message);
         return talks;
     }
 
-    // Group fetched sentences by talk_id
+    // Group fetched paragraphs by talk_id
     const fullTextMap = {};
     for (const row of data) {
         if (!fullTextMap[row.talk_id]) fullTextMap[row.talk_id] = [];
@@ -675,7 +675,7 @@ async function fetchFullTalkText(talks) {
     return talks.map(talk => ({
         ...talk,
         text: fullTextMap[talk.talk_id]
-            ? fullTextMap[talk.talk_id].join(' ')
+            ? fullTextMap[talk.talk_id].join('\n\n')
             : talk.text
     }));
 }

@@ -114,7 +114,8 @@ def scrape_talk(talk_url, session):
     if not content_div:
         return None
 
-    content = " ".join(p.text.strip() for p in content_div.find_all("p"))
+    paragraphs = [p.text.strip() for p in content_div.find_all("p") if p.text.strip()]
+    content = "\n\n".join(paragraphs)
 
     year_match = re.search(r'/(\d{4})/', talk_url)
     year = int(year_match.group(1)) if year_match else None
@@ -127,7 +128,8 @@ def scrape_talk(talk_url, session):
         "year": year,
         "season": season,
         "url": talk_url,
-        "text": content
+        "text": content,
+        "paragraphs": paragraphs
     }
 
 

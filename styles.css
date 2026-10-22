@@ -637,13 +637,13 @@ input:focus {
     margin-bottom: 0.5rem;
 }
 
-.result-sentences {
+.result-paragraphs {
     font-size: 0.9rem;
     color: var(--text);
     line-height: 1.6;
 }
 
-.result-sentences mark {
+.result-paragraphs mark {
     background: rgba(62, 207, 142, 0.3);
     color: var(--text);
     padding: 0 2px;

@@ -1,8 +1,8 @@
 """
 Step 4: Generate Embeddings
 ===============================
-Reads scripts/output/sentences.json and generates OpenAI embeddings
-for each sentence. Saves the result to scripts/output/sentences_with_embeddings.json.
+Reads scripts/output/paragraphs.json and generates OpenAI embeddings
+for each paragraph. Saves the result to scripts/output/paragraphs_with_embeddings.json.
 
 This is the most expensive step (~$0.60 in API costs). The output is
 saved to disk so you won't lose your work if the next step fails.
@@ -11,14 +11,14 @@ Usage:
     python scripts/04_embed_data.py
 
 Input:
-    scripts/output/sentences.json  — from Step 3 (import)
+    scripts/output/paragraphs.json  — from Step 3 (import)
 
 Output:
-    scripts/output/sentences_with_embeddings.json  — sentence records with embedding vectors
+    scripts/output/paragraphs_with_embeddings.json  — paragraph records with embedding vectors
 
 Prerequisites:
     - config.secret.json with OPENAI_API_KEY
-    - scripts/output/sentences.json from the import step
+    - scripts/output/paragraphs.json from the import step
 """
 
 import json
@@ -30,8 +30,8 @@ from openai import OpenAI
 from tqdm import tqdm
 
 
-INPUT_FILE = os.path.join('scripts', 'output', 'sentences.json')
-OUTPUT_FILE = os.path.join('scripts', 'output', 'sentences_with_embeddings.json')
+INPUT_FILE = os.path.join('scripts', 'output', 'paragraphs.json')
+OUTPUT_FILE = os.path.join('scripts', 'output', 'paragraphs_with_embeddings.json')
 BATCH_SIZE = 100
 
 
@@ -45,12 +45,12 @@ def main():
         print(f"❌ {INPUT_FILE} not found. Run scripts/03_import_data.py first.")
         sys.exit(1)
 
-    # Load sentences
+    # Load paragraphs
     with open(INPUT_FILE, 'r', encoding='utf-8') as f:
         records = json.load(f)
 
     print("=" * 60)
-    print(f"Generating Embeddings for {len(records):,} Sentences")
+    print(f"Generating Embeddings for {len(records):,} Paragraphs")
     print("=" * 60)
     print(f"   Model: text-embedding-3-small (1,536 dimensions)")
     print(f"   Batch size: {BATCH_SIZE}\n")
@@ -62,10 +62,10 @@ def main():
             existing = json.load(f)
         already_embedded = len(existing)
         if already_embedded >= len(records):
-            print(f"✅ All {len(records):,} sentences already have embeddings in {OUTPUT_FILE}")
+            print(f"✅ All {len(records):,} paragraphs already have embeddings in {OUTPUT_FILE}")
             print(f"   Delete {OUTPUT_FILE} to re-generate.")
             return
-        print(f"   ⏩ Resuming from sentence {already_embedded:,} (found partial output)")
+        print(f"   ⏩ Resuming from paragraph {already_embedded:,} (found partial output)")
         records_to_embed = records[already_embedded:]
     else:
         existing = []
@@ -110,7 +110,7 @@ def main():
 
     file_size_mb = os.path.getsize(OUTPUT_FILE) / (1024 * 1024)
     print(f"\n✅ Embedding complete!")
-    print(f"   Embedded: {len(embedded_records):,} sentences")
+    print(f"   Embedded: {len(embedded_records):,} paragraphs")
     if errors:
         print(f"   Errors:   {errors:,}")
 
