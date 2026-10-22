@@ -87,6 +87,7 @@ const ragStatus = document.getElementById('rag-status');
 // Speaker filter (applies to all three search modes)
 const speakerFilter = document.getElementById('speaker-filter');
 const speakerFilterNote = document.getElementById('speaker-filter-note');
+const topicFilter = document.getElementById('topic-filter');
 
 // ============================================
 // SETUP BANNER DETECTION
@@ -291,6 +292,7 @@ function showApp(user) {
     // Check search readiness when user logs in
     checkSearchReadiness();
     loadSpeakers();
+    loadTopics();
 }
 
 // Fill the speaker dropdown. list_speakers() is protected by RLS, so this only
@@ -312,6 +314,39 @@ async function loadSpeakers() {
     }
     speakerFilter.value = current;
     speakerFilter.disabled = false;
+}
+
+// Fill the topic dropdown (talk_topics is also RLS-protected).
+async function loadTopics() {
+    if (!supabaseClient || !topicFilter) return;
+
+    const { data, error } = await supabaseClient.rpc('list_topics');
+    if (error || !data || data.length === 0) return;
+
+    topicFilter.replaceChildren(new Option('All topics', ''));
+    for (const t of data) {
+        topicFilter.append(new Option(`${t.topic} (${t.talk_count})`, t.topic));
+    }
+    topicFilter.disabled = false;
+}
+
+// The topic chosen in the dropdown, or null for "all topics".
+function selectedTopic() {
+    return topicFilter && topicFilter.value ? topicFilter.value : null;
+}
+
+// Keyword search queries the table directly, so it needs the topic's talk ids.
+const topicTalkIdCache = {};
+async function talkIdsForTopic(topic) {
+    if (!topicTalkIdCache[topic]) {
+        const { data, error } = await supabaseClient
+            .from('talk_topics')
+            .select('talk_id')
+            .eq('topic', topic);
+        if (error) throw new Error(`Topic lookup failed: ${error.message}`);
+        topicTalkIdCache[topic] = data.map(r => r.talk_id);
+    }
+    return topicTalkIdCache[topic];
 }
 
 // The speaker chosen in the dropdown, or null for "all speakers".
@@ -454,6 +489,9 @@ async function keywordSearch() {
 
         const speaker = selectedSpeaker();
         if (speaker) request = request.eq('speaker_name', speaker);
+
+        const topic = selectedTopic();
+        if (topic) request = request.in('talk_id', await talkIdsForTopic(topic));
 
         const { data, error } = await request.limit(20);
 
@@ -638,7 +676,8 @@ async function searchParagraphs(embedding) {
     const { data, error } = await supabaseClient.rpc('match_paragraphs', {
         query_embedding: embedding,
         match_count: 20,
-        filter_speaker: selectedSpeaker()
+        filter_speaker: selectedSpeaker(),
+        filter_topic: selectedTopic()
     });
 
     if (error) throw new Error(`Database search failed: ${error.message}`);
