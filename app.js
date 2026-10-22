@@ -84,6 +84,10 @@ const ragBtn = document.getElementById('rag-btn');
 const ragResults = document.getElementById('rag-results');
 const ragStatus = document.getElementById('rag-status');
 
+// Speaker filter (applies to all three search modes)
+const speakerFilter = document.getElementById('speaker-filter');
+const speakerFilterNote = document.getElementById('speaker-filter-note');
+
 // ============================================
 // SETUP BANNER DETECTION
 // ============================================
@@ -286,6 +290,33 @@ function showApp(user) {
     if (userEmailSpan) userEmailSpan.textContent = user.email;
     // Check search readiness when user logs in
     checkSearchReadiness();
+    loadSpeakers();
+}
+
+// Fill the speaker dropdown. list_speakers() is protected by RLS, so this only
+// works for a logged-in user; call it after login.
+async function loadSpeakers() {
+    if (!supabaseClient || !speakerFilter) return;
+
+    const { data, error } = await supabaseClient.rpc('list_speakers');
+    if (error || !data || data.length === 0) {
+        speakerFilterNote.textContent = 'Speakers unavailable until data is loaded.';
+        return;
+    }
+
+    const current = speakerFilter.value;
+    // Build options with the DOM (not innerHTML) so a name can never break markup.
+    speakerFilter.replaceChildren(new Option('All speakers', ''));
+    for (const s of data) {
+        speakerFilter.append(new Option(`${s.speaker_name} (${s.talk_count})`, s.speaker_name));
+    }
+    speakerFilter.value = current;
+    speakerFilter.disabled = false;
+}
+
+// The speaker chosen in the dropdown, or null for "all speakers".
+function selectedSpeaker() {
+    return speakerFilter && speakerFilter.value ? speakerFilter.value : null;
 }
 
 function showMessage(text, type) {
@@ -416,11 +447,15 @@ async function keywordSearch() {
 
     try {
         // Search paragraph_embeddings that contain the keyword (case-insensitive)
-        const { data, error } = await supabaseClient
+        let request = supabaseClient
             .from('paragraph_embeddings')
             .select('text, talk_id, title, speaker, url')
-            .ilike('text', `%${query}%`)
-            .limit(20);
+            .ilike('text', `%${query}%`);
+
+        const speaker = selectedSpeaker();
+        if (speaker) request = request.eq('speaker_name', speaker);
+
+        const { data, error } = await request.limit(20);
 
         if (error) throw new Error(`Search failed: ${error.message}`);
 
@@ -602,7 +637,8 @@ async function searchParagraphs(embedding) {
 
     const { data, error } = await supabaseClient.rpc('match_paragraphs', {
         query_embedding: embedding,
-        match_count: 20
+        match_count: 20,
+        filter_speaker: selectedSpeaker()
     });
 
     if (error) throw new Error(`Database search failed: ${error.message}`);
